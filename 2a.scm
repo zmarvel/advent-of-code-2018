@@ -20,7 +20,8 @@
 			(string-trim-right line)
 			ids)))))
 
-(define (count-ids ids)
+;; Map each id to an a-list containing the counts of letters in the id
+(define (count-letters ids)
   (map (lambda (id)
 	 (cons id
 	       (fold (lambda (letter alist)
@@ -37,6 +38,15 @@
        ids))
 
 
+;; Map each id to a pair:
+;; - (0 . 0) - the id contains no letter exactly two or exactly three
+;;   times.
+;; - (1 . 0) - the id contains at least one letter exactly twice, and
+;;   it contains no letter exactly three times.
+;; - (0 . 1) - the id contains no letter exactly twice, and it
+;;   contains at least one letter exactly three times.
+;; - (1 . 1) - the id contains at least one letter exactly twice, and
+;;   it contains at least one letter exactly three times.
 (define (two-or-three counts-a-list)
   ;; expecting an a-list of (id . count-a-list)
   (map
@@ -54,6 +64,7 @@
 		       counts))))
      counts-a-list))
 
+;; Compute (sum1 . sum2) from a list of pairs of numbers.
 (define (sum-twos-threes two-three-a-list)
   (fold (lambda (id-two-three totals)
 	  (match-let* (((id . two-three) id-two-three)
@@ -64,7 +75,7 @@
 	two-three-a-list))
 
 (let* ((ids (read-ids (current-input-port) '()))
-       (counts (count-ids ids))
+       (counts (count-letters ids))
        (twos-threes (two-or-three counts))
        (sums (sum-twos-threes twos-threes)))
   (match-let (((twos . threes) sums))
