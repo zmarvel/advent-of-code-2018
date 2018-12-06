@@ -107,6 +107,11 @@
 	  '(0 . 0)
 	  totals)))
 
+;; During which minute was a particular guard asleep the most?
+;; - shifts: ((guard-id => (falls-asleep . wakes-up) ...) ...)
+;; - minutes: #(n_0 ... n_59) -- number of times the guard was asleep
+;;   during a particular minute
+;; Returns (minute . count)
 (define (find-sleepiest-minute shifts guard-id minutes)
   (let ((guard-sleeps (hash-ref shifts guard-id)))
     (for-each (lambda (shift)
@@ -128,29 +133,20 @@
 		 '(0 . 0)
 		 minutes)))
 
-;; minutes: ((0 => ((id => asleep-count) ...)) ...)
-(define (minute-stats shifts minutes)
-  (let ((n (length shifts)))
-    (vector-map! (lambda (i elt)
-		   (make-hash-table n))
-		 minutes))
-  (hash-for-each (lambda (handle)
-		   (let ((id (car handle))
-			 (sleeps (cdr handle)))
-		     (for-each (lambda (falls-wakes)
-				 (let ((falls-asleep (car falls-wakes))
-				       (wakes-up (cdr falls-wakes)))
-				   (let loop ((i falls-asleep))
-				     (if (< i wakes-up)
-					 (begin
-					   (vector-set!
-					    minutes
-					    (let ((ht (vector-ref minutes i)))
-					      (hash-set! ht id (1+ (hash-ref ht id)))))
-					   (loop (1+ i)))))))
-			       sleeps))
-		   )
-		 shifts))
+;; Which guard is asleep most frequently on the same minute?
+;; shifts: ((guard-id => (falls-asleep . wakes-up)) ...)
+;; Returns (guard-id . (sleepiest-minute . count))
+(define (guard-sleepiest-minute shifts guard-ids)
+  (fold (lambda (guard-id sleepiest)
+	  (let* ((minute-count (find-sleepiest-minute shifts guard-id (make-vector 60 0)))
+		 (minute (car minute-count))
+		 (count (cdr minute-count))
+		 (sleepiest-count (cddr sleepiest)))
+	    (if (> count sleepiest-count)
+		`(,guard-id ,minute . ,count)
+		sleepiest)))
+	  '(0 0 . 0)
+	guard-ids))
 
 (define print-list
   (cute for-each (lambda (elt) (display elt) (newline)) <>))
@@ -159,17 +155,18 @@
   (hash-for-each (cute format #t "~a -> ~a\n" <> <>) htab))
 
 (let ((records (map parse-record (sort-lines (read-records (current-input-port))))))
-    (print-list records)
   (let* ((shifts (process-shifts records #f #f #f (make-hash-table)))
 	 (guard-ids (hash-fold (lambda (id sleeps ls) (cons id ls)) '() shifts))
 	 ;; (sleepiest (find-sleepiest shifts))
 	 ;; (sleepiest-id (car sleepiest))
 	 ;; (sleepiest-minute (car (find-sleepiest-minute shifts sleepiest-id (make-vector 60 0))))
-	 (minute-stats shifts (make-vector 60 #f))
+	 (guard-minute-count (guard-sleepiest-minute shifts guard-ids))
+	 (sleepiest-guard (car guard-minute-count))
+	 (sleepiest-minute (cadr guard-minute-count)) 
+	 (sleepiest-count (cddr guard-minute-count))
 	 )
       ;;(print-hash-table shifts)
       ;;(print-list (vector->list minutes))
     ;; (display sleepiest) (newline)
-    (format #t "~a @ ~a\n" sleepiest-id sleepiest-minute)
-    (display (* sleepiest-id sleepiest-minute)) (newline)
+    (display (* sleepiest-guard sleepiest-minute)) (newline)
     ))
