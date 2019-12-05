@@ -238,8 +238,6 @@
   ;; board the first time, but since the board is not that big, we
   ;; might as well just traverse the intersection mask (same size as
   ;; the board)
-  ;;
-  ;; TODO can't use origin coordinate frame for this
   (let col-loop ((col 0)
 		 (min-distance 999999))
     (if (< col w)
@@ -284,9 +282,6 @@
   ;; (display-board board) (newline)
   ;; (display-board intersections) (newline)
   (assert (= (find-closest-intersection board origin intersections w h) 6)))
-
-;; TODO I think I'm also counting when a path crosses itself, which
-;; should **not** count
 
 ;; Here's a more minimal example where x-values go negative
 
