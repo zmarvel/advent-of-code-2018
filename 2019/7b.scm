@@ -52,7 +52,7 @@
 
 (define (eval-instr! program i get-input put-output)
   (let ((decoded (decode-instruction (vector-ref program i))))
-    (display decoded) (newline)
+    ;; (display decoded) (newline)
     (match-let (((mode3 mode2 mode1 . opcode) decoded))
       (cond
 	 ;; add and multiply instructions have 3 operands. we can assume
@@ -273,40 +273,38 @@
 
     (let loop ((output 0))
       ;; (format #t "~a out=~a\n" (list a b c d e) output)
-      (if (= (vector-ref program-a pc-a) 99)
-	  (unbox output-e)
-	  (match-let (((pc . done) (eval-until-output!
-				    program-a pc-a
-				    (unbox output-e) output-a)))
-	    (set! pc-a pc)
-	    (if done
-		(unbox output-a)
-		(match-let (((pc . done) (eval-until-output!
-					  program-b pc-b
-					  (unbox output-a) output-b)))
-		  (set! pc-b pc)
-		  (if done
-		      (unbox output-b)
-		      (match-let (((pc . done) (eval-until-output!
-						program-c pc-c
-						(unbox output-b) output-c)))
-			(set! pc-c pc)
-			(if done
-			    (unbox output-c)
-			    (match-let (((pc . done) (eval-until-output!
-						      program-d pc-d
-						      (unbox output-c) output-d)))
-			      (set! pc-d pc)
-			      (if done
-				  (unbox output-d)
-				  (match-let (((pc . done) (eval-until-output!
-							    program-e pc-e
-							    (unbox output-d) output-e)))
-				    (set! pc-e pc)
-				    (if done
-					(unbox output-e)
-					(loop output-e)))))))
-		      ))))))))
+      (match-let (((pc . done) (eval-until-output!
+				program-a pc-a
+				(unbox output-e) output-a)))
+	(set! pc-a pc)
+	(if done
+	    (unbox output-e)
+	    (match-let (((pc . done) (eval-until-output!
+				      program-b pc-b
+				      (unbox output-a) output-b)))
+	      (set! pc-b pc)
+	      (if done
+		  (unbox output-b)
+		  (match-let (((pc . done) (eval-until-output!
+					    program-c pc-c
+					    (unbox output-b) output-c)))
+		    (set! pc-c pc)
+		    (if done
+			(unbox output-c)
+			(match-let (((pc . done) (eval-until-output!
+						  program-d pc-d
+						  (unbox output-c) output-d)))
+			  (set! pc-d pc)
+			  (if done
+			      (unbox output-d)
+			      (match-let (((pc . done) (eval-until-output!
+							program-e pc-e
+							(unbox output-d) output-e)))
+				(set! pc-e pc)
+				(if done
+				    (unbox output-e)
+				    (loop output-e)))))))
+		  )))))))
 
 (define (maximize-output program)
   (let inputs-loop ((a 5)
@@ -329,7 +327,7 @@
     (let ((program (vector-copy program)))
       (if (unique-phases? a b c d e)
 	  (let ((output (eval-loop! program a b c d e)))
-	    (format #t "phases=~a out=~a\n" (list a b c d e) output)
+	    ;; (format #t "phases=~a out=~a\n" (list a b c d e) output)
 	    (continue (if (> output max-output)
 			  (list a b c d e)
 			  max-input)
