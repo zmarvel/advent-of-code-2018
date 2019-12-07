@@ -283,28 +283,19 @@
 				      program-b pc-b
 				      (unbox output-a) output-b)))
 	      (set! pc-b pc)
-	      (if done
-		  (unbox output-b)
+	      (match-let (((pc . done) (eval-until-output!
+					program-c pc-c
+					(unbox output-b) output-c)))
+		(set! pc-c pc)
+		(match-let (((pc . done) (eval-until-output!
+					  program-d pc-d
+					  (unbox output-c) output-d)))
+		  (set! pc-d pc)
 		  (match-let (((pc . done) (eval-until-output!
-					    program-c pc-c
-					    (unbox output-b) output-c)))
-		    (set! pc-c pc)
-		    (if done
-			(unbox output-c)
-			(match-let (((pc . done) (eval-until-output!
-						  program-d pc-d
-						  (unbox output-c) output-d)))
-			  (set! pc-d pc)
-			  (if done
-			      (unbox output-d)
-			      (match-let (((pc . done) (eval-until-output!
-							program-e pc-e
-							(unbox output-d) output-e)))
-				(set! pc-e pc)
-				(if done
-				    (unbox output-e)
-				    (loop output-e)))))))
-		  )))))))
+					    program-e pc-e
+					    (unbox output-d) output-e)))
+		    (set! pc-e pc)
+		    (loop output-e))))))))))
 
 (define (maximize-output program)
   (let inputs-loop ((a 5)
