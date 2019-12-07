@@ -4,6 +4,7 @@
 	     (ice-9 format)
 	     (srfi srfi-1) ;; for fold, map, etc
 	     (srfi srfi-11) ;; for (let-values ...)
+	     (srfi srfi-111) ;; for boxes
 	     ((rnrs) :version (6)) ;; for assert
 	     )
 
@@ -51,18 +52,19 @@
 
 (define (eval-instr! program i get-input put-output)
   (let ((decoded (decode-instruction (vector-ref program i))))
-    ;; (display decoded) (newline)
+    (display decoded) (newline)
     (match-let (((mode3 mode2 mode1 . opcode) decoded))
-      (let ((op1 (get-op program mode1 (+ i 1))))
-	(cond
+      (cond
 	 ;; add and multiply instructions have 3 operands. we can assume
 	 ;; that op3 has mode 'position
 	 ((= opcode 1)
-	  (let ((op2 (get-op program mode2 (+ i 2))))
+	  (let ((op1 (get-op program mode1 (+ i 1)))
+		(op2 (get-op program mode2 (+ i 2))))
 	    (set-op! program mode3 (+ i 3) (+ op1 op2))
 	    4))
 	 ((= opcode 2)
-	  (let ((op2 (get-op program mode2 (+ i 2))))
+	  (let ((op1 (get-op program mode1 (+ i 1)))
+		(op2 (get-op program mode2 (+ i 2))))
 	    (set-op! program mode3 (+ i 3) (* op1 op2))
 	    4))
 	 ;; input and output instructions have only 1 operand
@@ -73,30 +75,34 @@
 	    (vector-set! program op1 value)
 	    2))
 	 ((= opcode 4) ;; out
-	  (begin
+	  (let ((op1 (get-op program mode1 (+ i 1))))
 	    (put-output op1)
 	    2))
 	 ((= opcode 5) ;; jump if true
-	  (let ((op2 (get-op program mode2 (+ i 2))))
+	  (let ((op1 (get-op program mode1 (+ i 1)))
+		(op2 (get-op program mode2 (+ i 2))))
 	    (if (not (zero? op1))
 		(- op2 i)
 		3)))
 	 ((= opcode 6) ;; jump if false
-	  (let ((op2 (get-op program mode2 (+ i 2))))
+	  (let ((op1 (get-op program mode1 (+ i 1)))
+		(op2 (get-op program mode2 (+ i 2))))
 	    (if (zero? op1)
 		(- op2 i)
 		3)))
 	 ((= opcode 7) ;; less than
-	  (let ((op2 (get-op program mode2 (+ i 2))))
+	  (let ((op1 (get-op program mode1 (+ i 1)))
+		(op2 (get-op program mode2 (+ i 2))))
 	    (set-op! program mode3 (+ i 3)
 		     (if (< op1 op2) 1 0))
 	    4))
 	 ((= opcode 8) ;; equals
-	  (let ((op2 (get-op program mode2 (+ i 2))))
+	  (let ((op1 (get-op program mode1 (+ i 1)))
+		(op2 (get-op program mode2 (+ i 2))))
 	    (set-op! program mode3 (+ i 3)
 		     (if (= op1 op2) 1 0))
 	    4))
-	 )))))
+	 ))))
 
 (define thunk (lambda () #t))
 
@@ -194,14 +200,6 @@
 	  ;; (display int) (newline)
 	  (read-loop (1+ position) program')))))
 
-;; (call-with-input-file "5-1.test"
-;; (call-with-input-file "5-2.test"
-;; (call-with-input-file "5-3.test"
-;;   (lambda (port)
-;;     (let ((program (read-program port)))
-;;       ;; (display program) (newline)
-;;       (eval-program! program))))
-
 (define inputs (make-vector 10 0))
 (define input-idx 0)
 (define (get-input)
@@ -220,105 +218,139 @@
 	(assert #f))))
 
 (define (unique-phases? a b c d e)
-  (not (or
-	(= a b)
-	(= a c)
-	(= a d)
-	(= a e)
-	(= b c)
-	(= b d)
-	(= b e)
-	(= c d)
-	(= c e)
-	(= d e))))
+  (not (or (= a b) (= a c) (= a d) (= a e)
+	   (= b c) (= b d) (= b e)
+	   (= c d) (= c e)
+	   (= d e))))
+
+(define (eval-until-output! program i input output-box)
+  ;; Returns (program-counter . done)
+  (let loop ((i i))
+    (cond
+     ((= (vector-ref program i) 4) ;; output instr
+      (let ((advance (eval-instr!
+		      program i
+		      thunk
+		      (lambda (o) (set-box! output-box o)))))
+	;; (format #t "i=~a out=~a\n" i out)
+	(cons (+ i advance) #f)))
+     ((= (vector-ref program i) 99) ;; halt
+      (cons i #t))
+     (else
+      (let ((advance (eval-instr! program i (lambda () input) thunk)))
+	;; (format #t "i=~a out=~a\n" i out)
+	(loop (+ i advance)))))))
 
 (define (eval-loop! program a b c d e)
+  (let ((program-a (vector-copy program))
+	(program-b (vector-copy program))
+	(program-c (vector-copy program))
+	(program-d (vector-copy program))
+	(program-e (vector-copy program))
+	(pc-a 0)
+	(pc-b 0)
+	(pc-c 0)
+	(pc-d 0)
+	(pc-e 0)
+	(output-a (box 0))
+	(output-b (box 0))
+	(output-c (box 0))
+	(output-d (box 0))
+	(output-e (box 0))
+	)
 
-  (define (eval-a! o)
-    (set! input-idx 0)
-    (vector-set! inputs 0 a)
-    (vector-set! inputs 1 o)
-    (eval-program! program get-input eval-b!)
-    )
+    ;; only have to get phase on first input
+    (let ((advance (eval-instr! program-a 0 (lambda () a) thunk)))
+      (set! pc-a (+ pc-a advance)))
+    (let ((advance (eval-instr! program-b 0 (lambda () b) thunk)))
+      (set! pc-b (+ pc-b advance)))
+    (let ((advance (eval-instr! program-c 0 (lambda () c) thunk)))
+      (set! pc-c (+ pc-c advance)))
+    (let ((advance (eval-instr! program-d 0 (lambda () d) thunk)))
+      (set! pc-d (+ pc-d advance)))
+    (let ((advance (eval-instr! program-e 0 (lambda () e) thunk)))
+      (set! pc-e (+ pc-e advance)))
 
-  (define (eval-b! o)
-    (set! input-idx 0)
-    (vector-set! inputs 0 b)
-    (vector-set! inputs 1 o)
-    (eval-program! program get-input eval-c!)
-    )
-
-  (define (eval-c! o)
-    (set! input-idx 0)
-    (vector-set! inputs 0 c)
-    (vector-set! inputs 1 o)
-    (eval-program! program get-input eval-d!)
-    )
-
-  (define (eval-d! o)
-    (set! input-idx 0)
-    (vector-set! inputs 0 d)
-    (vector-set! inputs 1 o)
-    (eval-program! program get-input eval-e!)
-    )
-
-  (define (eval-e! o)
-    (set! input-idx 0)
-    (vector-set! inputs 0 e)
-    (vector-set! inputs 1 o)
-    (eval-program! program get-input put-output)
-    )
-
-  (let ((program (vector-copy program)))
-    (set! output 0)
-    (eval-a! output)
-    ))
+    (let loop ((output 0))
+      ;; (format #t "~a out=~a\n" (list a b c d e) output)
+      (if (= (vector-ref program-a pc-a) 99)
+	  (unbox output-e)
+	  (match-let (((pc . done) (eval-until-output!
+				    program-a pc-a
+				    (unbox output-e) output-a)))
+	    (set! pc-a pc)
+	    (if done
+		(unbox output-a)
+		(match-let (((pc . done) (eval-until-output!
+					  program-b pc-b
+					  (unbox output-a) output-b)))
+		  (set! pc-b pc)
+		  (if done
+		      (unbox output-b)
+		      (match-let (((pc . done) (eval-until-output!
+						program-c pc-c
+						(unbox output-b) output-c)))
+			(set! pc-c pc)
+			(if done
+			    (unbox output-c)
+			    (match-let (((pc . done) (eval-until-output!
+						      program-d pc-d
+						      (unbox output-c) output-d)))
+			      (set! pc-d pc)
+			      (if done
+				  (unbox output-d)
+				  (match-let (((pc . done) (eval-until-output!
+							    program-e pc-e
+							    (unbox output-d) output-e)))
+				    (set! pc-e pc)
+				    (if done
+					(unbox output-e)
+					(loop output-e)))))))
+		      ))))))))
 
 (define (maximize-output program)
-  (let inputs-loop ((a 0)
-		    (b 0)
-		    (c 0)
-		    (d 0)
-		    (e 0)
+  (let inputs-loop ((a 5)
+		    (b 5)
+		    (c 5)
+		    (d 5)
+		    (e 5)
 		    (max-input '(0 0 0 0 0))
 		    (max-output 0))
-    
-    (let ((program (vector-copy program)))
-      (eval-loop! program a b c d e))
 
-    (match-let (((max-input . max-output)
-		 (if (and (> output max-output) (unique-phases? a b c d e))
-		     (cons (list a b c d e) output)
-		     (cons max-input max-output))))
-      ;; (format #t "~a~a~a~a~a → ~a\n" a b c d e output)
+    (define (continue max-input max-output)
       (cond
-       ((< e 4) (inputs-loop a b c d (1+ e) max-input max-output))
-       ((< d 4) (inputs-loop a b c (1+ d) 0 max-input max-output))
-       ((< c 4) (inputs-loop a b (1+ c) 0 0 max-input max-output))
-       ((< b 4) (inputs-loop a (1+ b) 0 0 0 max-input max-output))
-       ((< a 4) (inputs-loop (1+ a) 0 0 0 0 max-input max-output))
-       (else (cons max-input max-output))))))
+       ((< e 9) (inputs-loop a b c d (1+ e) max-input max-output))
+       ((< d 9) (inputs-loop a b c (1+ d) 5 max-input max-output))
+       ((< c 9) (inputs-loop a b (1+ c) 5 5 max-input max-output))
+       ((< b 9) (inputs-loop a (1+ b) 5 5 5 max-input max-output))
+       ((< a 9) (inputs-loop (1+ a) 5 5 5 5 max-input max-output))
+       (else (cons max-input max-output))))
+
+    (let ((program (vector-copy program)))
+      (if (unique-phases? a b c d e)
+	  (let ((output (eval-loop! program a b c d e)))
+	    (format #t "phases=~a out=~a\n" (list a b c d e) output)
+	    (continue (if (> output max-output)
+			  (list a b c d e)
+			  max-input)
+		      (if (> output max-output)
+			  output
+			  max-output)))
+	  (continue max-input max-output)))))
 
 (display "test1") (newline)
-(let ((program (call-with-input-file "7-1.test" read-program)))
+(let ((program (call-with-input-file "7b-1.test" read-program)))
   (match-let (((i . max) (maximize-output program)))
     (display (cons i max)) (newline)
-    (test = max 43210)
-    (test equal? i '(4 3 2 1 0))))
+    (test = max 139629729)
+    (test equal? i '(9 8 7 6 5))))
 
 (display "test2") (newline)
-(let ((program (call-with-input-file "7-2.test" read-program)))
+(let ((program (call-with-input-file "7b-2.test" read-program)))
   (match-let (((i . max) (maximize-output program)))
     (display (cons i max)) (newline)
-    (test = max 54321)
-    (test equal? i '(0 1 2 3 4))))
-
-(display "test3") (newline)
-(let ((program (call-with-input-file "7-3.test" read-program)))
-  (match-let (((i . max) (maximize-output program)))
-    (display (cons i max)) (newline)
-    (test = max 65210)
-    (test equal? i '(1 0 4 3 2))))
+    (test = max 18216)
+    (test equal? i '(9 7 8 5 6))))
 
 (let ((program (call-with-input-file "7.input" read-program)))
   (match-let (((i . max) (maximize-output program)))
